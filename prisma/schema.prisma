@@ -1,0 +1,90 @@
+// M0-2：仅 User / Session / Installation / Repository / RepoConfig（对齐 TechDesign §3.2，其余表后续里程碑再加）
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  directUrl  = env("DATABASE_URL_UNPOOLED")
+  extensions = [pgcrypto, citext]
+}
+
+// ---------- 认证 ----------
+model User {
+  id             String   @id @default(cuid())
+  githubId       Int      @unique
+  login          String
+  name           String?
+  email          String?  @db.Citext
+  avatarUrl      String?
+  accessTokenEnc String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  sessions      Session[]
+  installations Installation[]
+
+  @@index([login])
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  tokenHash String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+// ---------- GitHub App ----------
+model Installation {
+  id                   String    @id @default(cuid())
+  githubInstallationId Int       @unique
+  userId               String
+  accountLogin         String
+  accountType          String
+  suspendedAt          DateTime?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  repositories Repository[]
+
+  @@index([userId])
+}
+
+model Repository {
+  id             String   @id @default(cuid())
+  githubRepoId   Int      @unique
+  installationId String
+  fullName       String
+  defaultBranch  String   @default("main")
+  private        Boolean  @default(false)
+  isEnabled      Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  installation Installation @relation(fields: [installationId], references: [id], onDelete: Cascade)
+  config       RepoConfig?
+
+  @@index([installationId])
+  @@index([fullName])
+}
+
+model RepoConfig {
+  id                 String   @id @default(cuid())
+  repositoryId       String   @unique
+  defaultTargetLangs String[] @default([])
+  ignoreGlobs        Json     @default("[]")
+  glossaryPath       String   @default(".github/i18n.yaml")
+  branchStrategy     String   @default("append")
+  dailyCharLimit     Int      @default(500000)
+  updatedAt          DateTime @updatedAt
+
+  repository Repository @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+}

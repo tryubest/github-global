@@ -1,0 +1,87 @@
+---
+description: GitHub 文档翻译 SaaS 项目背景、技术栈、锁定决策
+alwaysApply: true
+---
+
+# 项目：GitHub Global（文档翻译 SaaS）
+
+## 一句话定位
+用户登录 GitHub → 选择自有仓库 → 勾选目标语言 → AI 自动翻译 Markdown 文档 → 以 PR 提交回仓库；后续 push 自动增量重译。
+
+## 权威文档（改动前必看）
+- `docs/PRD.md` —— 产品需求（做什么）
+- `docs/TechDesign.md` —— 技术方案（怎么做）
+- 本规则 —— 技术栈与决策的**快速锚定表**，细节以上面两份为准
+
+## 技术栈（已锁定，不得擅自更换）
+- **框架**：Next.js 16 App Router + TypeScript strict
+- **Runtime**：Node.js（Prisma 不完全支持 Edge）；仅 `app/(marketing)/` 静态页允许 Edge
+- **UI**：shadcn/ui + Tailwind CSS + lucide-react
+- **表单/校验**：react-hook-form + zod（前后端共用 schema）
+- **数据库**：Neon Postgres + Prisma ORM（`DATABASE_URL` pooled + `DATABASE_URL_UNPOOLED` for migration）
+- **认证**：GitHub App（OAuth 登录 + Installation Token 做仓库操作）
+- **AI**：OpenRouter（OpenAI 兼容接口）
+- **Markdown**：remark + unified（AST 保护代码块/URL/图片）
+- **任务调度**：**GitHub Actions cron（每分钟）** curl `/api/worker/tick`；**不**使用 Vercel Cron（Hobby 不支持分钟级）
+- **包管理**：pnpm（禁止 npm/yarn）
+- **部署**：Vercel（Hobby 起步）
+- **内网穿透**：cloudflared（本地 Webhook 调试）
+
+## 关键业务对象
+- `User` / `Session` —— 登录态
+- `Installation` —— GitHub App 安装实例
+- `Repository` —— 仓库元数据（身份、分支、可见性、`isEnabled` 增量开关）
+- `RepoConfig` —— 仓库级偏好（`defaultTargetLangs`、ignoreGlobs、branchStrategy、dailyCharLimit）
+- `TranslationJob` / `FileTranslation` —— 翻译任务与单文件记录（`sourceHash` 做增量判断）
+- `WebhookEvent` —— 原始 webhook 审计（`deliveryId` 做幂等键）
+- `Glossary` / `TranslationMemory` / `Model` —— 术语/记忆/模型注册表
+
+## 已锁定的关键决策（TD-01 ~ TD-08）
+- **TD-01** MVP **仅支持公开仓库**；前端过滤 + 后端硬校验 `Repository.private === false`
+- **TD-02** 术语表：仓库 `.github/i18n.yaml` 为权威来源，平台 DB 双向同步
+- **TD-03** 翻译 PR **同分支追加**（`branchStrategy = "append"`）
+- **TD-04** Sentry 等错误监控 **推迟到 M3 Beta**，M0~M2 用 Vercel Logs + pino
+- **TD-05** Worker **不拆独立项目**，MVP 放在同一 Next.js 项目
+- **TD-06** Worker 触发：**GitHub Actions cron（`* * * * *`）→ curl worker 端点**
+- **TD-07** 任务进度：**前端 2s 短轮询 `/api/jobs/:id`**；SSE 推到 GA 再评估
+- **TD-08** 翻译模型（按优先级）：
+  1. `z-ai/glm-4.5-air:free`（主）
+  2. `qwen/qwen3-next-80b-a3b-instruct:free`（备 1）
+  3. `openai/gpt-oss-120b:free`（备 2）
+  - ⚠️ **DeepSeek `:free` 已下架**，不要使用
+
+## 核心硬约束
+- 代码块 / 行内代码 / URL / 图片链接**不翻译**（remark AST 占位符保护）
+- 翻译只通过 **PR** 提交，**永不直接 push** 默认分支
+- 所有密钥、Token、Client Secret、连接串**只放 `.env.local` / Vercel env**，代码里只读 `process.env.*`
+- 模型 ID 从 env 读取，**禁止硬编码**
+- 环境三套隔离：**Dev App + Neon `dev` / Preview App(=Dev) + Neon `preview-<sha>` / Prod App + Neon `main`**
+- `.env.local` 绝不进 git（`.gitignore` 已覆盖）
+
+## 目录约定
+```
+app/              Next.js 页面和 API 路由（App Router）
+  (marketing)/    未登录公开页
+  (auth)/         登录页
+  (dashboard)/    受保护工作台
+  api/            REST API
+middleware.ts     ⚠️ 项目根目录，不是 app/middleware.ts
+lib/
+  env.ts          zod 校验所有环境变量（启动即失败）
+  db.ts           PrismaClient 单例
+  auth/           OAuth + Session + guards
+  github/         Octokit 封装、App 鉴权、仓库/PR 操作
+  translator/     OpenRouter 客户端、markdown-protect、chunk、prompt、validator
+  queue/          任务入队、worker tick、webhook 消费
+components/
+  ui/             shadcn 生成
+prisma/           schema + migrations
+docs/             PRD / TechDesign / handoff
+.github/workflows/  worker-tick.yml（GitHub Actions cron）
+```
+
+## 边界约定
+- `app/` 禁止直接 `import @prisma/client`，必须经 `lib/db.ts`
+- `lib/<module>/` 内部实现不对外暴露，只通过 `lib/<module>/index.ts` 导出
+- 所有 API route 第一行走 `lib/auth/guards.ts` 做权限校验
+- 所有 POST 入参用 zod schema 校验，失败返回 422
