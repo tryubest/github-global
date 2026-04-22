@@ -10,10 +10,10 @@
 | --- | --- |
 | 产品名称 | GitHub Global（暂定） |
 | 产品定位 | 面向 GitHub 仓库的 AI 文档翻译 SaaS |
-| 文档版本 | v1.1（补充平台风险与画像 C 参与路径） |
+| 文档版本 | v1.1.1（§8 M0 里程碑与仓库实施栈对齐：Next.js 16 / Prisma 6） |
 | 文档状态 | Draft（评审中） |
 | 负责人 | PM / 开发者本人 |
-| 最后更新 | 2026-04-20 |
+| 最后更新 | 2026-04-22 |
 
 ---
 
@@ -358,7 +358,7 @@ erDiagram
 
 | 阶段 | 周期 | 交付目标 |
 | --- | --- | --- |
-| M0 脚手架 | 第 1 周 | Next.js 15 + Prisma + Neon + shadcn 初始化，GitHub OAuth 跑通 |
+| M0 脚手架 | 第 1 周 | Next.js 16 + Prisma 6 + Neon + shadcn 初始化，GitHub OAuth 跑通 |
 | M1 核心链路 | 第 2–3 周 | GitHub App 安装 + 仓库列表 + 单文件翻译 demo（本地 cloudflared 调试 Webhook） |
 | M2 MVP | 第 4–6 周 | P0 全部功能完成，可端到端跑出 PR |
 | M3 上线 Beta | 第 7 周 | Vercel 部署，邀请 20 位种子作者试用 |

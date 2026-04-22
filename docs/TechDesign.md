@@ -9,12 +9,12 @@
 | 项目 | 内容 |
 | --- | --- |
 | 文档类型 | 技术方案设计（Technical Design） |
-| 文档版本 | v1.1（review 采纳：4 问题 + 5 建议 + TD-01~08 锁定） |
+| 文档版本 | v1.2（M0 实施对齐：Next.js 16 / Prisma 6 / Tailwind v4；正文见 §11） |
 | 对齐 PRD | `docs/PRD.md` v1.1 |
 | 技术栈锁定 | `.cursor/rules/project-context.mdc` |
 | 代码规范 | `.cursor/rules/code-style.mdc` |
 | 负责人 | 全栈架构师 / 开发者本人 |
-| 最后更新 | 2026-04-20 |
+| 最后更新 | 2026-04-22 |
 
 ---
 
@@ -47,7 +47,7 @@ flowchart TB
     end
 
     subgraph Vercel["☁️ Vercel (部署单元)"]
-        subgraph NextApp["Next.js 15 App"]
+        subgraph NextApp["Next.js 16 App"]
             direction TB
             UI["App Router 页面<br/>Server Components"]
             ApiRoutes["API Routes<br/>/api/*"]
@@ -239,15 +239,15 @@ flowchart LR
 
 | 领域 | 选型 | 理由 | 放弃的候选 |
 | --- | --- | --- | --- |
-| 框架 | **Next.js 15 App Router** | 前后端同构、Server Components 默认降低水合成本、Vercel 原生支持 | Remix（Vercel 加持弱）、Vite+Express（两套部署麻烦） |
+| 框架 | **Next.js 16 App Router** | 前后端同构、Server Components 默认降低水合成本、Vercel 原生支持 | Remix（Vercel 加持弱）、Vite+Express（两套部署麻烦） |
 | 语言 | **TypeScript strict** | 规则文件硬性要求；多人协作/AI 协作提示精度更高 | 原生 JS（对 AI 生成代码的可信度太低） |
-| UI 组件 | **shadcn/ui** | 代码级复制而非 npm 依赖，可完全自定义；Radix Primitives 无障碍达标 | MUI（主题学习成本高）、Chakra（未来维护不确定） |
+| UI 组件 | **shadcn/ui** | 代码级复制而非 npm 依赖，可完全自定义；无障碍由底层 primitives 保障（**M0 预设为 Base UI**；历史方案亦常用 Radix） | MUI（主题学习成本高）、Chakra（未来维护不确定） |
 | 样式 | **Tailwind CSS** | 与 shadcn 绑定；utility-first 与 AI 生成搭配极佳 | CSS Modules（冗长）、styled-components（已式微） |
 | 图标 | **lucide-react** | shadcn 默认搭配，2000+ 图标全覆盖 | heroicons（数量偏少） |
 | 表单 | **react-hook-form + zod** | 与后端 zod schema 共用类型，end-to-end type safe | formik（类型推导弱） |
 | 实时进度 | **短轮询（2s）**，GA 前再升级 SSE | Vercel Node Runtime `maxDuration` ≤ 60s，SSE 长连接撑不住翻译时长；短轮询成本可控、实现简单 | SSE（阻于 serverless 时长限制）、WebSocket（双向过剩） |
 | 状态管理 | **React Server Components + URL state + 少量 zustand** | 服务端状态不落客户端；zustand 仅用于跨组件 UI 状态（Toast、Modal） | Redux（重）、Jotai（够用但 zustand 生态更大） |
-| 数据请求 | **Server Actions + 原生 fetch** | Next.js 15 Server Actions 覆盖 90% 表单场景；RSC 里直接 await | SWR/React Query（RSC 下必要性下降） |
+| 数据请求 | **Server Actions + 原生 fetch** | Next.js 16 Server Actions 覆盖 90% 表单场景；RSC 里直接 await | SWR/React Query（RSC 下必要性下降） |
 
 ### 2.2 后端（仍在 Next.js 内）
 
@@ -1107,14 +1107,14 @@ Document translation/
 
 | 阶段 | 对齐 PRD | 本文档中对应的章节 | 技术交付物 |
 | --- | --- | --- | --- |
-| **M0 脚手架** | 第 1 周 | §2 + §7 + §8 | Next.js init、Prisma init、shadcn init、env 校验、`lib/db.ts`、CI 跑通 |
+| **M0 脚手架** | 第 1 周 | §2 + §7 + §8 | Next.js **16** init、Prisma **6** init、Tailwind **v4**、shadcn init、env 校验、`lib/db.ts`、CI 跑通 |
 | **M1 核心链路** | 第 2–3 周 | §3 (User/Installation/Repository) + §4.2 + §4.3 | OAuth 登录跑通、GitHub App 安装回调、仓库列表展示 |
 | **M2 MVP** | 第 4–6 周 | §3 (TranslationJob/FileTranslation) + §4.4 + §4.7 + §5.1 | 手动触发翻译、worker 闭环、PR 创建 |
 | **M3 Beta** | 第 7 周 | §7.1 + §7.2 | 生产部署、Prod App 创建、20 位种子用户 |
 | **M4 增量** | 第 8–10 周 | §4.6 + §5.3 | Webhook + hash 比对 + 术语表 |
 | **M5 付费化** | 第 11–14 周 | （本文档未展开，后续 DesignDoc 增补）| Stripe、用量看板 |
 
-每个阶段完工时，本文档对应章节打勾；如有变更，在章节末尾追加"v1.1 变更说明"小节，不删旧内容。
+每个阶段完工时，本文档对应章节打勾；如有变更，在章节末尾追加"v1.x 变更说明"小节，不删旧内容。
 
 ---
 
@@ -1139,4 +1139,14 @@ Document translation/
 - 与 PRD 的分工：PRD 讲"为什么做、做什么"，本文件讲"怎么做、用什么做"
 - 大版本变更（v1 → v2）时保留旧版本在 `docs/archive/TechDesign-v1.md`
 
-> 本 TechDesign v1.0 已对齐 PRD v1.1 与三份规则文件。下一步：作者 review → 锁定 §10 待决议项 → 进入 M0 脚手架实施。
+### v1.2 变更说明（2026-04-22，M0 脚手架实测对齐）
+
+| 项 | 文档原表述（v1.1） | 仓库实际（以 `package.json` 为准） | 处理 |
+| --- | --- | --- | --- |
+| Next.js | 多处写 **15** | **16.2.4**（`create-next-app@latest` 默认） | 全文统一为 **16**；架构图 subgraph 同步 |
+| React / Tailwind | 未钉死小版本 | **React 19.2.x**、**Tailwind CSS v4**（PostCSS 插件链路） | §9 M0 交付物补充 |
+| Prisma | §3.2 示例为通用写法 | **Prisma 6.19.x**；**不**跟 Prisma 7（`schema.prisma` 内不再写 `url` / `directUrl`） | M0~M2 锁 6.x；升 7 需另开设计变更 |
+| shadcn | Radix 表述为主 | 当前为 **base-nova + `@base-ui/react`**（CLI 默认预设） | 技术栈仍以「shadcn/ui 生态」表述；组件实现以生成代码为准 |
+| lucide-react | 无版本钉死 | 须用 **官方 `0.4xx`**；勿用 npm 上 **`^1.8.0` 撞名包**（缺少 `Github` 等导出） | 写入规则 / handoff，避免再踩坑 |
+
+> 本 TechDesign **v1.2** 已与当前仓库 M0 实施一致；§10 TD-01~08 仍有效。后续仅改版本号与「变更说明」，不删除 v1.1 历史结论。
