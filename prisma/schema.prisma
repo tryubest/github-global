@@ -8,7 +8,8 @@ generator client {
 datasource db {
   provider   = "postgresql"
   url        = env("DATABASE_URL")
-  directUrl  = env("DATABASE_URL_UNPOOLED")
+  // directUrl 不强制写第二 env：Vercel 上易漏配 UNPOOLED 导致 P1012；迁移与运行时共用 `url`（Neon pooler 在多数项目可通）。
+  // 需要单独直连时可在 DATABASE_URL 使用 non-pooler 串，或恢复 directUrl=env("DATABASE_URL_UNPOOLED") 并在 CI 中显式设置。
   extensions = [pgcrypto, citext]
 }
 

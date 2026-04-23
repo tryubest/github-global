@@ -2,11 +2,13 @@ import "server-only";
 
 import { z } from "zod";
 
-const envSchema = z.object({
-  NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
+const envSchema = z
+  .object({
+    NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
 
-  DATABASE_URL: z.string().min(1, "DATABASE_URL is required"),
-  DATABASE_URL_UNPOOLED: z.string().min(1, "DATABASE_URL_UNPOOLED is required"),
+    DATABASE_URL: z.string().min(1, "DATABASE_URL is required"),
+    /** Neon 非池化；未设时回退为 DATABASE_URL（与 schema 不强制 directUrl 一致） */
+    DATABASE_URL_UNPOOLED: z.string().min(1).optional(),
 
   GITHUB_APP_ID: z.coerce.number().int().positive(),
   GITHUB_APP_CLIENT_ID: z.string().min(1, "GITHUB_APP_CLIENT_ID is required"),
@@ -26,7 +28,11 @@ const envSchema = z.object({
   CRON_SECRET: z.string().min(1, "CRON_SECRET is required"),
 
   NEXT_PUBLIC_APP_URL: z.url(),
-});
+  })
+  .transform((d) => ({
+    ...d,
+    DATABASE_URL_UNPOOLED: d.DATABASE_URL_UNPOOLED ?? d.DATABASE_URL,
+  }));
 
 const parsed = envSchema.safeParse(process.env);
 
