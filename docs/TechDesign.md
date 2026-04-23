@@ -115,7 +115,7 @@ sequenceDiagram
     N->>GH: GET /user
     GH-->>N: user profile
     N->>DB: upsert User
-    N->>B: Set-Cookie: session=jwt; 302 → /dashboard
+    N->>B: Set-Cookie session=jwt，302 → /dashboard
     B->>N: GET /dashboard
     N->>DB: 查 Installations 是否存在
     alt 无 Installation
