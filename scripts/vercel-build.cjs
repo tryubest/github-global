@@ -58,16 +58,36 @@ if (!dbUrl) {
     "POSTGRES_URL_NON_POOLED",
   ];
   const present = keys.map((k) => `${k}=${nonempty(env[k]) ? "set" : "missing"}`).join(" ");
+  const hinted = Object.keys(env).filter(
+    (k) =>
+      /DATABASE|POSTGRES|NEON|PRISMA|SUPABASE/i.test(k) &&
+      /URL|URI|DSN|CONNECTION/i.test(k),
+  );
   console.error(
     [
       "[vercel-build] 未找到可用数据库连接串。",
       `诊断(仅 key 名，无密码): ${present}。`,
-      "若你已在 Vercel 里填写：① 点「Save」并确认保存成功 ② 变量须勾选本部署对应的环境（如 Production）③ 同名校验与黄叹号重复项 ④ 若仍失败，在 Deployments 中确认本部署与配置变量的项目为同一项。",
-    ].join(""),
+      hinted.length
+        ? `构建进程里可见的「疑似数据库」变量名(无值): ${hinted.join(", ")}。`
+        : "构建进程里没有任何匹配的 URL 类变量名（常见于：变量只勾了错误环境、或填在别的 Vercel 项目里）。",
+      "若你已在 Vercel 里填写：① 点「Save」并确认保存成功 ② 变量须勾选本部署对应的环境（Production / Preview 与本次部署一致）③ 检查同名重复项与黄叹号 ④ Redeploy ⑤ Neon 集成若只注入 Runtime，请再手动添加同名变量供 Build 使用。",
+    ].join(" "),
   );
   process.exit(1);
 }
 env.DATABASE_URL = dbUrl;
+
+// Prisma schema 的 directUrl：migrate 需要；Neon+Vercel 集成常用 POSTGRES_URL_NON_POOLED
+if (!nonempty(env.DATABASE_URL_UNPOOLED)) {
+  const fallback =
+    env.POSTGRES_URL_NON_POOLED ||
+    env.POSTGRES_URL ||
+    env.NEON_DATABASE_URL_UNPOOLED ||
+    "";
+  if (nonempty(fallback)) {
+    env.DATABASE_URL_UNPOOLED = fallback.trim();
+  }
+}
 
 function run(cmd) {
   console.log("> " + cmd);
