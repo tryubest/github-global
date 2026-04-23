@@ -1,0 +1,34 @@
+---
+description: GitHub 上 Mermaid 可渲染的 Markdown 约定（避免 TechDesign 等在 github.com 无法出图）
+globs: docs/**/*.md
+alwaysApply: false
+---
+
+# GitHub Mermaid 兼容（`docs/**/*.md`）
+
+以 **github.com 对 `.md` 的内置 Mermaid** 为准做自检；本地 Cursor / VS Code 预览通过 **不等于** GitHub 一定通过。
+
+## sequenceDiagram（时序图）
+
+- **禁止**在箭头消息文本中使用英文分号 `;`。Mermaid 把 `;` 当作语句分隔符，消息里一旦出现，整图常在 GitHub 上解析失败（表现：代码块不变成图）。
+- **避免**在消息或 participant 别名里使用尖括号占位，如 `<lang>`、`<ts>`、`<sha>`。易被当作 HTML/标签，导致渲染异常；改用中文说明或 `{id}` 等无尖括号写法。
+- **慎用**同一消息内多个半角冒号片段（如 `GET /api/jobs/:id`）。若出问题，改为 `GET /api/jobs/{id}` 或拆成更短描述。
+- 换行可继续用 `<br/>`；不要与上述高风险字符叠在同一行里「硬凑」。
+
+## flowchart / graph（流程图）
+
+- **禁止**使用 `nodeId[/路径/]` 这种**梯形节点**承载「以 `/` 分隔的路径」：内部斜杠会与梯形语法冲突，GitHub 上极易整图失败。请改用 **`nodeId["用引号包起来的标签"]`** 矩形节点，例如 `WH["/api/webhooks/github"]`。
+- 节点标签中的 **`&`** 在部分渲染链路上会触发 HTML 实体问题；用 **「与」「和」** 代替。
+- `subgraph` 的 **id** 与末尾 `class id1,id2 style` 引用保持一致；避免 id 与 Mermaid 关键字或过于泛化的单词无谓重合导致歧义。
+- 节点文字中避免 **`{{` `}}` 双花括号**（易与模板/扩展语法混淆）；改用 `P1`、中文「占位符」等。
+
+## erDiagram
+
+- **不要**在单行属性里写 **`FK,UK`** 这类逗号拼接修饰；GitHub 所用 Mermaid 版本常解析失败。改为单列约束（如仅 `UK`）或把说明放进引号注释字段，细节用正文表格补充。
+- 实体名尽量避免单独使用 **`Model`** 等与工具链冲突或过于泛化的 id；可改为 **`AiModel`** 等具体名字。
+- 属性默认值/示例字符串中尽量少塞 **冒号链、管道枚举**（如 `a|b|c`）；可缩成短词，详细枚举放在 Markdown 表或正文。
+
+## 合入前自检
+
+- 修改含 Mermaid 的文档后，在 **GitHub 网页**打开该文件预览确认；或将代码块粘贴到 [Mermaid Live Editor](https://mermaid.live) 验证。
+- 宁可图画简单、文字补充细节，也不要为「一行写全」牺牲 GitHub 可解析性。
