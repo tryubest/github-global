@@ -1,7 +1,6 @@
 /**
- * Vercel 上 `prisma` CLI 只读 `process.env`；部分 Neon 集成只注入 POSTGRES_PRISMA_URL 等。
- * 在跑 migrate 前将常用别名写回 DATABASE_URL，便于与 lib/env 及 schema 一致。
- * 本机构建时加载 .env / .env.local（与 Prisma CLI 行为一致）；Vercel 无这些文件时仅用平台环境变量。
+ * Vercel：`prisma` / migrate 会读本进程的 `env`；Neon/集成常注入 POSTGRES_PRISMA_URL 等别名字段。
+ * 本机构建时加载 .env / .env.local；Vercel 仓库内通常无此文件，仅用平台环境变量。
  */
 const path = require("node:path");
 const fs = require("node:fs");
@@ -18,24 +17,57 @@ if (fs.existsSync(localPath)) {
 }
 
 const env = { ...process.env };
-if (!env.DATABASE_URL) {
-  env.DATABASE_URL =
-    env.POSTGRES_PRISMA_URL ||
-    env.POSTGRES_URL ||
-    env.NEON_DATABASE_URL ||
-    env.DATABASE_URL_UNPOOLED ||
-    "";
+
+function nonempty(v) {
+  return typeof v === "string" && v.trim().length > 0;
 }
-if (!env.DATABASE_URL) {
+
+/**
+ * 优先 pooled；否则用与 Neon 非池化 / Vercel Postgres 等兼容的一串别名字段（顺序重要）。
+ * @param {NodeJS.ProcessEnv} e
+ * @returns {string | null}
+ */
+function pickDatabaseUrl(e) {
+  const candidates = [
+    e.DATABASE_URL,
+    e.DATABASE_URL_UNPOOLED,
+    e.POSTGRES_PRISMA_URL,
+    e.POSTGRES_URL,
+    e.POSTGRES_URL_NON_POOLED,
+    e.NEON_DATABASE_URL,
+  ];
+  for (const c of candidates) {
+    if (nonempty(c)) return c.trim();
+  }
+  for (const [k, v] of Object.entries(e)) {
+    if (!nonempty(v)) continue;
+    if (!/DATABASE|POSTGRES|NEON/i.test(k)) continue;
+    if (!/URL|URI|DSN|CONNECTION|PRISMA/i.test(k)) continue;
+    return v.trim();
+  }
+  return null;
+}
+
+const dbUrl = pickDatabaseUrl(env);
+if (!dbUrl) {
+  const keys = [
+    "DATABASE_URL",
+    "DATABASE_URL_UNPOOLED",
+    "POSTGRES_PRISMA_URL",
+    "POSTGRES_URL",
+    "POSTGRES_URL_NON_POOLED",
+  ];
+  const present = keys.map((k) => `${k}=${nonempty(env[k]) ? "set" : "missing"}`).join(" ");
   console.error(
     [
-      "[vercel-build] 未找到 DATABASE_URL。",
-      "请在 Vercel → 项目 → Settings → Environment Variables 中，为 Production 添加 DATABASE_URL（Neon 连接串），",
-      "或确保 Neon/Vercel 集成已注入 POSTGRES_PRISMA_URL 等。",
+      "[vercel-build] 未找到可用数据库连接串。",
+      `诊断(仅 key 名，无密码): ${present}。`,
+      "若你已在 Vercel 里填写：① 点「Save」并确认保存成功 ② 变量须勾选本部署对应的环境（如 Production）③ 同名校验与黄叹号重复项 ④ 若仍失败，在 Deployments 中确认本部署与配置变量的项目为同一项。",
     ].join(""),
   );
   process.exit(1);
 }
+env.DATABASE_URL = dbUrl;
 
 function run(cmd) {
   console.log("> " + cmd);
