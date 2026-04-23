@@ -12,21 +12,17 @@ export default function LoginPage() {
           登录
         </h1>
         <p className="text-sm text-muted-foreground">
-          GitHub OAuth 尚未接入。M1 将在此页完成真实授权跳转。
+          使用 GitHub 账号授权登录，登录后可继续安装 App 并管理仓库。
         </p>
       </div>
 
       <div className="flex flex-col gap-3">
-        <button
-          type="button"
-          disabled
-          className={cn(
-            buttonVariants({ size: "lg" }),
-            "cursor-not-allowed opacity-60",
-          )}
+        <a
+          href="/api/auth/github/start?redirect=/dashboard"
+          className={cn(buttonVariants({ size: "lg" }))}
         >
-          使用 GitHub 登录（即将开放）
-        </button>
+          使用 GitHub 登录
+        </a>
 
         <Link
           href="/"
