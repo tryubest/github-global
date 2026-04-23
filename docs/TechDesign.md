@@ -14,7 +14,7 @@
 | 技术栈锁定 | `.cursor/rules/project-context.mdc` |
 | 代码规范 | `.cursor/rules/code-style.mdc` |
 | 负责人 | 全栈架构师 / 开发者本人 |
-| 最后更新 | 2026-04-22 |
+| 最后更新 | 2026-04-23 |
 
 ---
 
@@ -92,6 +92,29 @@ flowchart TB
 
 ### 1.2 请求维度：三条关键链路的时序图
 
+本节三张**时序图**描述的是：请求**谁先找谁、按什么顺序、为了什么目的**。竖线（参与者）是「角色」；横线箭头是「一次交互」；`alt` / `loop` 表示分支与重复。
+
+#### 1.2.0 新手阅读指南：三条链路分别解决什么？
+
+| 编号 | 链路 | 一句话 | 你作为用户能感知到什么 | 与后面 §1.3 的关系 |
+| --- | --- | --- | --- | --- |
+| **1.2.1** | 登录 + 授权仓库 | 证明「你是哪个 GitHub 用户」，并让本应用**安全地**获得操作你仓库的许可（OAuth + GitHub App 安装）。 | 点登录 → 跳 GitHub → 回到本站 → 可能看到「去安装 App」→ 装完后看到仓库列表。 | 主要经过 `app/` 的页面与 `/api/auth/*`、`lib/auth`、`lib/github`；结果写入 DB 的 User / Installation / Repository。 |
+| **1.2.2** | 翻译任务与 PR | 你点「开始翻译」后，**后台慢慢干活**（拉文件、调模型、推分支、开 PR），前端只**轮询进度**。 | 选仓库与语言 → 出现进度 → 完成后跳到 PR 链接。 | `app/` 发起任务；`lib/translator`、`lib/queue`（worker）、`lib/github`、OpenRouter；DB 记 Job / 文件级状态（设计见 §3.2 全量 schema；M0 可能尚未建全表）。 |
+| **1.2.3** | 增量翻译（Webhook） | 仓库里**有人 push 了新 commit** 时，GitHub **主动通知**我们；我们先**快速收条**，再让 Worker **慢慢比对、决定是否新开翻译任务**。 | 你改文档并 push 后，无需再点一次翻译，系统可自动跟进（若已开启）。 | `middleware` 验签；`/api/webhooks/github` 入库 WebhookEvent；Worker 消费；依赖 `lib/github` 比对变更。 |
+
+**时序图里常见符号（对照看图）**
+
+| 符号 | 含义 |
+| --- | --- |
+| `->>` / `-->>` | 实线：请求；虚线箭头：响应（异步返回常用 `-->>`）。 |
+| `actor` / `participant` | 人/浏览器/服务/数据库等「竖条」角色。 |
+| `autonumber` | 给箭头自动编号，方便下文逐步对照。 |
+| `alt` / `else` / `end` | 条件分支：满足 A 走一支，否则走另一支。 |
+| `loop` / `end` | 重复：例如「每 2 秒问一次进度」。 |
+| `Note over X` | 注释：说明背景（不单独占一步请求）。 |
+
+> **注意**：Mermaid 时序图里，**消息文本中不要写英文分号 `;`**，否则在 GitHub 上可能无法渲染（会被当成语句结束符）。
+
 #### 1.2.1 登录 + 授权仓库（首次上手）
 
 ```mermaid
@@ -127,6 +150,56 @@ sequenceDiagram
     else 已有 Installation
         N-->>B: 渲染仓库列表
     end
+```
+
+**1.2.1 在做什么（白话）**  
+你要用本应用操作 GitHub 上的文档，必须先完成两件事：**（A）登录**——让本站知道你是 GitHub 上的谁；**（B）授权**——让本站能以 **GitHub App** 的身份访问你选中的仓库。OAuth 负责（A），安装 App 到仓库负责（B）。数据库里会记下你的 `User`、App 的 `Installation` 以及可见的 `Repository` 列表。
+
+**参与者分工**
+
+| 角色 | 是什么 | 在本链路中的作用 |
+| --- | --- | --- |
+| 用户 | 真人 | 点登录、在 GitHub 上点同意、安装 App。 |
+| 浏览器 | Chrome 等 | 替你发 HTTP 请求、保存 Cookie、跟随 302 跳转。 |
+| Next.js | 本站的 App + API | 发起 OAuth、换 token、建会话、读库、渲染页面。 |
+| GitHub | github.com | 发 OAuth 页面、发 token、在用户安装 App 后推送 Webhook。 |
+| Neon | Postgres 数据库 | 存 User / Installation / Repository，下次请求可复用。 |
+
+**建议对照上图的步骤（按阶段理解，不必死记编号）**
+
+| 阶段 | 发生了什么 | 作用 |
+| --- | --- | --- |
+| OAuth 启动 | 用户点登录 → 浏览器访问 `/api/auth/github/start` → **302** 到 GitHub 授权页 | 把用户交给 GitHub 做身份与授权确认，本站不碰密码。 |
+| 用户同意 | 用户在 GitHub 点授权 → GitHub **302** 回 `callback?code=` | `code` 是一次性「兑换券」，只能服务端用来换 `access_token`。 |
+| 换 token + 拉资料 | Next.js 用 `code` 换 `access_token`，再 `GET /user` | 拿到稳定的用户标识（如 `githubId`、login），准备写入 `User` 表。 |
+| 落库 + 会话 | `upsert User`，`Set-Cookie` 后 **302** 到 `/dashboard` | 以后浏览器带 Cookie，本站就知道「你是谁」。 |
+| 进控制台 | `GET /dashboard`，查是否已有 **Installation** | 仅有 OAuth **不能**代表 App 已装到仓库；所以要分支判断。 |
+| 分支：未安装 App | 页面引导去 GitHub 安装；用户装完后 GitHub 发 `installation` 类 Webhook；本站 `upsert Installation + Repository[]` | 把「哪些仓库可被本 App 访问」同步进数据库。 |
+| 分支：已安装 | 直接渲染仓库列表 | 用户可继续选仓库做翻译等操作。 |
+
+**与 1.2.2 / 1.2.3 的关系**  
+没有 1.2.1，后续既无法代表用户调 GitHub API，也收不到带安装上下文的 Webhook，**翻译与增量链路都不会成立**。
+
+```mermaid
+flowchart TB
+    subgraph login["阶段 A：OAuth 登录"]
+        L1[用户在站点点登录]
+        L2[跳转 GitHub 授权]
+        L3[带回 code 回调本站]
+        L4[换 token 并写入 User + Cookie]
+        L1 --> L2 --> L3 --> L4
+    end
+    subgraph install["阶段 B：GitHub App 安装（首次）"]
+        I1[打开控制台 dashboard]
+        I2{库里有 Installation 吗}
+        I3[引导去 GitHub 安装 App]
+        I4[Webhook 同步仓库列表到 DB]
+        I5[展示已授权仓库列表]
+        I1 --> I2
+        I2 -->|否| I3 --> I4 --> I5
+        I2 -->|是| I5
+    end
+    login --> install
 ```
 
 #### 1.2.2 翻译任务 & PR 产物
@@ -168,6 +241,63 @@ sequenceDiagram
     B-->>U: 下一次轮询拿到 succeeded，跳转 PR
 ```
 
+**1.2.2 在做什么（白话）**  
+用户一次「开始翻译」会**立刻**在数据库里创建一条（或多条）任务记录，但**真正耗时的活**（读 GitHub 文件、调 LLM、写回分支、开 PR）在 **Worker** 里异步做。浏览器用**短轮询**（例如每 2 秒）问「好了没」，避免在 serverless 上长时间挂一个连接。Worker 由 **Vercel Cron** 周期性触发（例如每分钟），从 DB 里**抢**待处理任务，防止多实例重复执行同一任务。
+
+**参与者分工**
+
+| 角色 | 是什么 | 在本链路中的作用 |
+| --- | --- | --- |
+| 用户 / 浏览器 | 操作者与前端 | 提交「选仓库 + 语言」；轮询 `/api/jobs/:id` 拿进度。 |
+| Next.js | Server Action + API | `createJob` 写 DB；提供任务查询接口。 |
+| Worker | 本设计里多为 `/api/worker/tick` | 被 Cron 调用；拉 GitHub 树、调 OpenRouter、推 commit、更新 PR、回写 DB。 |
+| GitHub | 远程仓库与 API | 提供文件内容与写分支 / PR 的能力。 |
+| OpenRouter | LLM 网关 | 按 OpenAI 兼容协议返回译文。 |
+| Neon | 数据库 | 记录 Job、每个文件的翻译状态、token 用量等。 |
+
+**两条「时间线」并行（理解的关键）**
+
+| 时间线 | 谁发起 | 在干什么 |
+| --- | --- | --- |
+| **用户线（前台）** | 浏览器 | Server Action 创建任务 → **loop** 轮询进度 → 终态后跳转 PR。 |
+| **Worker 线（后台）** | Cron → Worker | 从 DB 取 `pending` → `running` → 对每个文件 × 语言调模型 → 校验 Markdown AST → 推到 `i18n/...` 分支 → 开/更新 PR → Job `succeeded`。 |
+
+**Worker 内层循环在干什么（逐步）**
+
+| 步骤 | 动作 | 目的 |
+| --- | --- | --- |
+| 1 | `SELECT ... FOR UPDATE SKIP LOCKED` | 多实例时**同一任务只被一个 Worker 拿走**。 |
+| 2 | Git Tree API 列 `.md` | 知道要翻译哪些文件。 |
+| 3 | 每个文件拉原文 → OpenRouter → 得译文 | 真正翻译。 |
+| 4 | remark AST 校验 | 防止模型破坏 Markdown 结构（表格/代码块等）。 |
+| 5 | commit 到专用分支 | 不直接污染默认分支，用 PR 给人审。 |
+| 6 | 更新 `FileTranslation` / `TranslationJob` | 进度可查询、可计费、可重试。 |
+
+**与 1.2.1 / 1.2.3 的关系**  
+依赖 1.2.1 拿到的权限才能读写仓库；1.2.3 则在**源文件变更**时可能**自动再触发**类似本链路的任务（通常新建 Job，而不是让用户再点一次）。
+
+```mermaid
+flowchart LR
+    subgraph front["前台：用户浏览器"]
+        F1[Server Action 创建 Job]
+        F2[轮询 GET /api/jobs/id]
+    end
+    subgraph back["后台：Cron + Worker"]
+        B1[tick 取 pending Job]
+        B2[读 GitHub 文件]
+        B3[OpenRouter 翻译]
+        B4[写分支 + PR]
+        B1 --> B2 --> B3 --> B4
+    end
+    subgraph db["DB"]
+        D[(Job / File 状态)]
+    end
+    F1 --> D
+    F2 --> D
+    B1 --> D
+    B4 --> D
+```
+
 #### 1.2.3 增量翻译（Webhook 驱动）
 
 ```mermaid
@@ -199,7 +329,68 @@ sequenceDiagram
     end
 ```
 
+**1.2.3 在做什么（白话）**  
+GitHub 在仓库发生事件（例如 **push**、**installation_repositories**）时，会向你配置的 URL **POST 一段 JSON**（Webhook）。本站必须：**先验证请求真的来自 GitHub**（HMAC 签名），再**尽快返回 200**（GitHub 若超时可能重试或认为失败），把原始载荷存进 `WebhookEvent` 表，由 **Worker 异步**慢慢处理——比对文件 hash、决定要不要新建翻译任务、或同步仓库列表。
+
+**参与者分工**
+
+| 角色 | 是什么 | 在本链路中的作用 |
+| --- | --- | --- |
+| GitHub | 事件源 | 在 push / 安装变更时 POST Webhook。 |
+| middleware.ts | Next.js 边缘/中间层 | **验签**；不通过直接 401，保护伪造请求。 |
+| `/api/webhooks/github` | API 路由 | 解析 payload、**早返回**、写入 `WebhookEvent`。 |
+| Neon | 数据库 | 持久化事件，支持重试与审计。 |
+| Worker | 异步消费者 | 读 `pending` 事件，调 GitHub Compare API，更新 DB，必要时创建 `TranslationJob`。 |
+
+**为什么要「3 秒内早返回」？**  
+GitHub 对 Webhook 响应时间有要求（常见讨论阈值约 **10s**）。翻译分析可能很慢，若放在同步 HTTP 里容易超时；所以 HTTP 只负责**收条 + 入库**，重活交给 Worker。
+
+**分支：两种典型事件**
+
+| 事件类型 | Worker 在做什么 | 业务含义 |
+| --- | --- | --- |
+| `push` | Compare API 看改了哪些文件 → 与已有 `FileTranslation.sourceHash` 比 → 变的才开新 Job | **增量翻译**：只处理变更，控制成本。 |
+| `installation_repositories` | 更新 `Repository` 表 | 用户在 GitHub 上给 App **增删仓库访问**时，本站列表与真实权限一致。 |
+
+**与 1.2.2 的关系**  
+1.2.3 通常**结束于「创建新的 TranslationJob」**；真正翻译仍走 1.2.2 里那一套 Worker 处理 Job 的逻辑（复用同一套「出队 → 翻译 → 写回」能力）。
+
+```mermaid
+flowchart TB
+    GH[GitHub POST Webhook]
+    MW[middleware 校验签名]
+    API[/api/webhooks/github]
+    DB[(WebhookEvent 表)]
+    W[Worker 异步处理]
+    GH --> MW --> API
+    API -->|INSERT pending| DB
+    API -->|尽快 200| GH
+    W -->|SELECT pending| DB
+    W -->|必要时创建 Job| DB
+```
+
 ### 1.3 模块分层（代码层面）
+
+**1.3.0 新手如何理解这一节**  
+上图不是「部署拓扑」，而是**代码应当怎么放、谁可以依赖谁**：上层负责 HTTP/UI，中层负责领域逻辑（GitHub、翻译、队列），底层统一用 Prisma 访问数据库。这样单测、替换实现（例如将来换 VCS）都更容易。
+
+**四条链路在分层上的落点（与 §1.2 对照）**
+
+| §1.2 链路 | 主要触碰的目录（概念上） | 说明 |
+| --- | --- | --- |
+| 1.2.1 登录 / 安装 | `app/`（页面与 `/api/auth`）、`lib/auth`、`lib/github`、经 `lib/db` 写 Prisma | 表现层发起，业务层封装 OAuth/App，数据层落库。 |
+| 1.2.2 翻译 + PR | `app/`（Action / 轮询 API）、`lib/translator`、`lib/queue`、`lib/github`、`lib/db` | Worker 逻辑放在 `lib/`，由 `app/api/worker` 薄封装触发。 |
+| 1.2.3 Webhook | `middleware.ts`、`app/api/webhooks`、`lib/github`、`lib/queue`（消费）、`lib/db` | 验签尽量靠前；路由层尽快写 DB。 |
+| 读模型 / 配置 | `lib/db` + `prisma/` | Schema 与迁移是结构真相来源（见 §3.2 与当前仓库 `prisma/schema.prisma` 可能分阶段对齐）。 |
+
+**分层职责表**
+
+| 层 | 路径 | 放什么 | 不该放什么 |
+| --- | --- | --- | --- |
+| 表现层 | `app/` | 页面、布局、Route Handlers、`middleware`、Server Actions 的**入口** | 不直接 `new PrismaClient()`；不写复杂 GitHub 调用细节 |
+| 业务层 | `lib/*` | 按领域的纯逻辑与对外的 `index.ts` API | 不直接绑定具体 React 组件 |
+| 数据访问 | `lib/db.ts` | Prisma 单例、（可选）事务辅助 | 业务规则应尽量回到 `lib/*` |
+| 元数据 | `prisma/` | `schema.prisma`、`migrations/` | 不在此写运行时业务代码 |
 
 ```mermaid
 flowchart LR
@@ -229,7 +420,20 @@ flowchart LR
     B2 -.P1 重构.-> B5
 ```
 
+上图箭头 **`A → B → C → D`** 表示**依赖方向**：页面与 API 依赖业务模块，业务模块依赖数据库访问，数据库访问对应 Prisma 元数据。`lib/vcs` 虚线表示 **P1** 才把 GitHub 抽象成通用 VCS，当前 MVP 可仍以 `lib/github` 为主。
+
+**依赖规则（结合上图）**
+
+| 允许 | 禁止（强约束） |
+| --- | --- |
+| `app/*` → `lib/*/index`（业务入口） | `app/*` **直接** `import @prisma/client` |
+| `lib/github` 等 → `lib/db` | `import lib/github/internal/...` 这类**跨模块深路径**（应用侧） |
+| 各 `lib` 子包对外只导出 `index.ts` 中声明的 API | 在 `app` 里堆长串 Octokit 调用而不下沉到 `lib/github` |
+
 **强约束**：`app/` 不直接 import `@prisma/client`，必须经 `lib/db.ts`；`lib/` 各子模块只通过根 `index.ts` 对外暴露，禁止跨模块深路径引用。
+
+**一条请求的「纵向切片」示例（帮助把 §1.2 与 §1.3 连起来）**  
+用户提交翻译表单：`app/(dashboard)/...` 里触发 Server Action → Action 调用 `lib/translator` 的 `createJob(...)` → 内部用 `lib/db` 事务写入 Job → 返回 `jobId` 给浏览器；随后 Cron 命中 `app/api/worker/tick` → 路由里调用 `lib/queue` / `lib/translator` 出队并执行 → 通过 `lib/github` 读写远程仓库。整条链路上，**只有 `lib/db` 以下才碰 Prisma**。
 
 ---
 
@@ -1150,3 +1354,8 @@ Document translation/
 | lucide-react | 无版本钉死 | 须用 **官方 `0.4xx`**；勿用 npm 上 **`^1.8.0` 撞名包**（缺少 `Github` 等导出） | 写入规则 / handoff，避免再踩坑 |
 
 > 本 TechDesign **v1.2** 已与当前仓库 M0 实施一致；§10 TD-01~08 仍有效。后续仅改版本号与「变更说明」，不删除 v1.1 历史结论。
+
+### v1.2 增补（2026-04-23，文档可读性）
+
+- **§1.2**：新增 **1.2.0**（三条链路总览表、时序图符号说明、Mermaid 注意点）；在 **1.2.1～1.2.3** 各节后增加白话说明、参与者表、分步/双时间线表，并各附一张**补充**流程图（与原有顺序图并存，便于线性阅读）。
+- **§1.3**：新增 **1.3.0**、与 §1.2 的对照表、分层职责表、依赖规则表及「纵向切片」示例说明；**不修改**原容器分层示意图，仅增加文字与表格释义。
