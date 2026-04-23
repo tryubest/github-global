@@ -1112,16 +1112,18 @@ flowchart LR
 
 ```mermaid
 flowchart LR
-    PR[PR 推送] --> Lint[eslint + tsc --noEmit]
-    Lint --> Test[vitest 单测]
-    Test --> Build[next build<br/>+ prisma generate]
-    Build --> Preview[Vercel Preview 部署]
-    Preview --> Review[人工 Review]
-    Review --> Merge[合并到 main]
-    Merge --> Migrate["prisma migrate deploy<br/>(Vercel build hook)"]
-    Migrate --> Deploy[Vercel Production 部署]
-    Deploy --> Smoke[E2E smoke test<br/>(Playwright, P1)]
+    PR["PR 推送"] --> Lint["eslint + tsc --noEmit"]
+    Lint --> Test["vitest 单测"]
+    Test --> Build["next build + prisma generate"]
+    Build --> Preview["Vercel Preview 部署"]
+    Preview --> Review["人工 Review"]
+    Review --> Merge["合并到 main"]
+    Merge --> Migrate["prisma migrate deploy，Vercel build hook"]
+    Migrate --> Deploy["Vercel Production 部署"]
+    Deploy --> Smoke["E2E smoke，Playwright P1"]
 ```
+
+> 上图节点文案已全部用引号包裹，避免 **`--noEmit`** 里的 **`--`** 被解析成流程图边语法（未加引号时会导致 GitHub 上整图无法渲染）。`next build` 与 `prisma generate` 在 Vercel 上通常同一次 build 内顺序执行。
 
 ### 7.3 环境变量清单（`.env.example`）
 
@@ -1368,4 +1370,5 @@ Document translation/
 - **§3.1** ER：`Model` → `AiModel`；`repositoryId FK,UK` → 单行 `UK`；简化 `ignoreGlobs` 与模型 id 示例字符串。
 - **§5.1** 流程图：节点文案去掉 `{{P1}}` 双花括号。
 - **§7.1**：`preview-<sha>` 改为不含尖括号的描述。
+- **§7.2**：CI/CD 流程图中 `Lint[eslint + tsc --noEmit]` 未引号包裹导致 **`--`** 被解析为边语法；改为全部 **`id["…"]`** 节点并略去易踩坑的 `<br/>`。
 - 新增 Cursor 规则 **`.cursor/rules/docs-mermaid-github.mdc`**，后续改 `docs/**/*.md` 中的 Mermaid 时遵循该文件。

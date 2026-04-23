@@ -17,6 +17,7 @@ alwaysApply: false
 
 ## flowchart / graph（流程图）
 
+- **方括号节点** `id[文字]` 内若出现 **`--`**（如 CLI 参数 `--noEmit`），未加引号时会被当成**边的语法**，整图解析失败。应写成 **`id["eslint + tsc --noEmit"]`** 或改掉 `--`（如「noEmit 模式」）。
 - **禁止**使用 `nodeId[/路径/]` 这种**梯形节点**承载「以 `/` 分隔的路径」：内部斜杠会与梯形语法冲突，GitHub 上极易整图失败。请改用 **`nodeId["用引号包起来的标签"]`** 矩形节点，例如 `WH["/api/webhooks/github"]`。
 - 节点标签中的 **`&`** 在部分渲染链路上会触发 HTML 实体问题；用 **「与」「和」** 代替。
 - `subgraph` 的 **id** 与末尾 `class id1,id2 style` 引用保持一致；避免 id 与 Mermaid 关键字或过于泛化的单词无谓重合导致歧义。
