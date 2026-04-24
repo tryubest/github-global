@@ -1,4 +1,4 @@
-// M0-2：仅 User / Session / Installation / Repository / RepoConfig（对齐 TechDesign §3.2，其余表后续里程碑再加）
+// M0 核心表 + WebhookEvent + TranslationJob / FileTranslation（TechDesign §3.2）
 
 generator client {
   provider        = "prisma-client-js"
@@ -27,6 +27,7 @@ model User {
 
   sessions      Session[]
   installations Installation[]
+  jobs          TranslationJob[]
 
   @@index([login])
 }
@@ -72,6 +73,8 @@ model Repository {
 
   installation Installation @relation(fields: [installationId], references: [id], onDelete: Cascade)
   config       RepoConfig?
+  jobs         TranslationJob[]
+  files        FileTranslation[]
 
   @@index([installationId])
   @@index([fullName])
@@ -88,4 +91,77 @@ model RepoConfig {
   updatedAt          DateTime @updatedAt
 
   repository Repository @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+}
+
+// ---------- 翻译任务（M2 MVP；对齐 TechDesign §3.2）----------
+model TranslationJob {
+  id           String    @id @default(cuid())
+  repositoryId String
+  userId       String
+  status       String    @default("pending")
+  /// manual | webhook | retry
+  trigger      String    @default("manual")
+  commitSha    String?
+  targetLangs  String[]
+  modelId      String
+  branchName   String?
+  prUrl        String?
+  totalFiles   Int       @default(0)
+  doneFiles    Int       @default(0)
+  failedFiles  Int       @default(0)
+  errorMessage String?
+  queuedAt     DateTime  @default(now())
+  startedAt    DateTime?
+  finishedAt   DateTime?
+
+  repository Repository        @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+  user       User              @relation(fields: [userId], references: [id], onDelete: Restrict)
+  files      FileTranslation[]
+
+  @@index([status, queuedAt])
+  @@index([repositoryId, queuedAt])
+}
+
+model FileTranslation {
+  id             String    @id @default(cuid())
+  jobId          String
+  repositoryId   String
+  path           String
+  lang           String
+  sourceHash     String    @default("")
+  translatedHash String?
+  tokensIn       Int       @default(0)
+  tokensOut      Int       @default(0)
+  durationMs     Int       @default(0)
+  status         String    @default("queued")
+  skipReason     String?
+  errorMessage   String?
+  /// 实际完成翻译的 OpenRouter 模型 ID（可能与任务首选模型不同，例如触发降级）
+  modelUsed      String?
+  startedAt      DateTime?
+  finishedAt     DateTime?
+  createdAt      DateTime  @default(now())
+
+  job        TranslationJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  repository Repository     @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+
+  @@index([repositoryId, path, lang, createdAt(sort: Desc)])
+  @@index([repositoryId, path, lang, sourceHash])
+  @@index([jobId, status])
+}
+
+// ---------- Webhook 审计（M2；对齐 TechDesign §3.2）----------
+model WebhookEvent {
+  id             String    @id @default(cuid())
+  deliveryId     String    @unique
+  eventType      String
+  /// 本站 `Installation.id`；未知时常为 null
+  installationId String?
+  payload        Json
+  status         String    @default("pending")
+  errorMessage   String?
+  receivedAt     DateTime  @default(now())
+  processedAt    DateTime?
+
+  @@index([status, receivedAt])
 }

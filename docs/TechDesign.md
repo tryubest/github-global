@@ -305,7 +305,7 @@ sequenceDiagram
     autonumber
     participant GH as GitHub
     participant MW as middleware.ts
-    participant N as /api/webhooks/github
+    participant N as "/api/webhooks/github"
     participant DB as Neon
     participant W as Worker
 
@@ -557,8 +557,8 @@ erDiagram
     RepoConfig {
         string id PK
         string repositoryId UK
-        string[] defaultTargetLangs "用户偏好语言"
-        json ignoreGlobs "glob 规则 JSON 数组"
+        string defaultTargetLangs "用户偏好语言(JSON 数组)"
+        string ignoreGlobs "glob 规则(JSON 数组)"
         string glossaryPath ".github/i18n.yaml"
         string branchStrategy "append|new-each"
         int dailyCharLimit
@@ -570,7 +570,7 @@ erDiagram
         string status "pending|running|succeeded|failed|cancelled"
         string trigger "manual|webhook|retry"
         string commitSha "对应的原文 commit"
-        string[] targetLangs
+        string targetLangs "目标语言数组"
         string modelId
         string branchName "i18n/zh-CN-2026xxxx"
         string prUrl
@@ -604,8 +604,8 @@ erDiagram
         string displayName
         bool isFree
         int contextWindow
-        decimal pricePerMTokenIn
-        decimal pricePerMTokenOut
+        float pricePerMTokenIn
+        float pricePerMTokenOut
         bool enabled
     }
     Glossary {
@@ -621,7 +621,7 @@ erDiagram
         string deliveryId UK "X-GitHub-Delivery"
         string eventType "push|installation|installation_repositories"
         string installationId FK "可空"
-        json payload "压缩后的原始载荷"
+        string payload "压缩后的原始载荷(JSON)"
         string status "pending|processed|failed"
         string errorMessage
         datetime receivedAt
