@@ -36,6 +36,23 @@ const envSchema = z
 
 export type Env = z.infer<typeof envSchema>;
 
+/** 不经过惰性缓存，不抛错，用于 /api/health/env 自诊断。 */
+export function checkEnvConfiguration():
+  | { ok: true }
+  | { ok: false; issues: { key: string; message: string }[] } {
+  const parsed = envSchema.safeParse(process.env);
+  if (parsed.success) {
+    return { ok: true };
+  }
+  return {
+    ok: false,
+    issues: parsed.error.issues.map((i) => ({
+      key: i.path.length > 0 ? i.path.map(String).join(".") : "(root)",
+      message: i.message,
+    })),
+  };
+}
+
 let cache: Env | null = null;
 
 /**
