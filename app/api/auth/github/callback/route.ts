@@ -14,6 +14,7 @@ import {
 import { upsertUserFromOAuth } from "@/lib/auth/upsert-github-user";
 
 export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 
 const querySchema = z.object({
   code: z.string().min(1).optional(),
@@ -33,6 +34,10 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   if (!parsed.success) {
     return jsonError(422, "INVALID_QUERY", "回调参数无效");
   }
+
+  const loginFallback = new URL("/login?error=callback", req.nextUrl.origin);
+
+  try {
   const q = parsed.data;
   const appBase = env.NEXT_PUBLIC_APP_URL;
   const loginUrl = (suffix: string): URL => new URL(`/login${suffix}`, appBase);
@@ -81,6 +86,19 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   const dest = new URL(nextPath, appBase);
   const res = NextResponse.redirect(dest, 302);
   clearOauthCookies(res);
-  await createSessionForUser(user.id, res);
+  try {
+    await createSessionForUser(user.id, res);
+  } catch (e) {
+    console.error("github callback createSessionForUser failed", { cause: e });
+    const resErr = NextResponse.redirect(loginUrl("?error=session_db"), 302);
+    clearOauthCookies(resErr);
+    return resErr;
+  }
   return res;
+  } catch (e) {
+    console.error("github callback unexpected", { cause: e });
+    const res = NextResponse.redirect(loginFallback, 302);
+    clearOauthCookies(res);
+    return res;
+  }
 }
