@@ -2,22 +2,20 @@ import "server-only";
 
 import { PrismaClient } from "@prisma/client";
 
-import { env } from "@/lib/env";
-
 const globalForPrisma = globalThis as unknown as {
   prisma?: PrismaClient;
 };
 
-function createPrismaClient(): PrismaClient {
-  void env;
+const nodeEnv = process.env.NODE_ENV;
 
+function createPrismaClient(): PrismaClient {
   return new PrismaClient({
-    log: env.NODE_ENV === "development" ? ["warn", "error"] : ["error"],
+    log: nodeEnv === "development" ? ["warn", "error"] : ["error"],
   });
 }
 
 export const db = globalForPrisma.prisma ?? createPrismaClient();
 
-if (env.NODE_ENV !== "production") {
+if (nodeEnv !== "production") {
   globalForPrisma.prisma = db;
 }
